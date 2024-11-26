@@ -81,7 +81,6 @@ class PrimeTime {
     private byte[] getResponse(String line) throws MalformedPayloadException {
       var prime = isPrime(line);
       var response = String.format(responseTemplate, prime);
-      System.out.println("write " + response + " to line: " + line);
       return response.getBytes();
     }
 
@@ -100,8 +99,7 @@ class PrimeTime {
       return sieve.get((int) p.number);
     }
 
-    record Payload(String method, double number) {
-    }
+    record Payload(String method, double number) {}
 
     static class PayloadAdapter implements JsonDeserializer<Payload> {
       @Override
@@ -116,9 +114,12 @@ class PrimeTime {
         if (!obj.has("number")) {
           throw new JsonParseException("number field required");
         }
-        return new Payload(
-          obj.get("method").getAsJsonPrimitive().getAsString(),
-          obj.get("number").getAsJsonPrimitive().getAsDouble());
+        var method = obj.get("method").getAsJsonPrimitive().getAsString();
+        var number = obj.get("number").getAsJsonPrimitive();
+        if (!number.isNumber()) {
+          throw new JsonParseException("number field is not a number");
+        }
+        return new Payload(method, number.getAsDouble());
       }
     }
 

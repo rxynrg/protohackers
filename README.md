@@ -1,6 +1,10 @@
 # protohackers
 My solutions to [Protohackers](https://protohackers.com/)
 
+### building a docker image
+
+`make image-X`, where `X` is the number of a problem, i.e. 0-11
+
 ### testing with netcat
 
 `netcat` was designed to work until both sides have closed the connection.
