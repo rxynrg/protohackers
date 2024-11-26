@@ -1,5 +1,3 @@
-GIT_SHA = $(shell git rev-parse --short HEAD)
-
 BUILD_KIT_DEBUG_OPTS := --no-cache --progress=plain
 
 EMPTY_CLASSPATH := [empty]
@@ -10,14 +8,14 @@ EMPTY_CLASSPATH := [empty]
 
 1_IMAGE_NAME := 1-prime-time
 1_MAIN_CLASS_NAME := PrimeTime
-1_CLASSPATH := json-20240303.jar
+1_CLASSPATH := gson-2.11.0.jar
 
 ALLOWED_IMAGES := 0 1
 
 image-%:
 	@if echo "$(ALLOWED_IMAGES)" | grep -qw "$*"; then \
 		docker build \
-			-t slick752/protohackers/$(value $*_IMAGE_NAME):$(GIT_SHA) \
+			-t slick752/protohackers:$(value $*_IMAGE_NAME) \
 			--build-arg APP_DIR=$(value $*_IMAGE_NAME) \
 			--build-arg MAIN_CLASS_NAME=$(value $*_MAIN_CLASS_NAME) \
 			--build-arg CLASSPATH=$(value $*_CLASSPATH) \

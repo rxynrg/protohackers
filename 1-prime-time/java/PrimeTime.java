@@ -1,34 +1,36 @@
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.lang.reflect.Type;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.util.Arrays;
-import java.util.HashSet;
-import java.util.Set;
+import java.util.BitSet;
 
-import org.json.JSONException;
-import org.json.JSONObject;
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
+import com.google.gson.JsonDeserializationContext;
+import com.google.gson.JsonDeserializer;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParseException;
+import com.google.gson.Strictness;
 
 class PrimeTime {
-  private static final Set<Integer> primes = new HashSet<>() {{
-    final int num = 10_000_000;
-    final boolean[] bool = new boolean[num];
-    Arrays.fill(bool, true);
-    for (int i = 2; i < Math.sqrt(num); i++) {
-      if (bool[i]) {
-        for (int j = (i * i); j < num; j = j + i) {
-          bool[j] = false;
+  private static final int sieveSize = 100_000_000;
+  private static final BitSet sieve = new BitSet(sieveSize) {{
+    set(2, sieveSize - 1);
+    for (int p = 2; p < Math.sqrt(sieveSize); p++) {
+      if (get(p)) {
+        for (int i = p * p; i < sieveSize; i += p) {
+          clear(i);
         }
       }
     }
-    for (int i = 2; i < bool.length; i++) {
-      if (bool[i]) add(i);
-    }
   }};
 
-  public static void main(String[] args) throws IOException {
+  public static void main(String... args) throws IOException {
     try (var ss = new ServerSocket(8080)) {
+      System.out.println("ready & listening for incoming connections");
       while (true) {
         try {
           var clientSocket = ss.accept();
@@ -41,6 +43,10 @@ class PrimeTime {
   }
 
   static class Handler implements Runnable {
+    private static final Gson gson = new GsonBuilder()
+      .setStrictness(Strictness.STRICT)
+      .registerTypeAdapter(Payload.class, new PayloadAdapter())
+      .create();
     private static final String responseTemplate =
       "{\"method\":\"isPrime\",\"prime\":%b}\n";
 
@@ -54,43 +60,66 @@ class PrimeTime {
     public void run() {
       try (var reader = new BufferedReader(new InputStreamReader(socket.getInputStream()));
            var outputStream = socket.getOutputStream()) {
-        try {
-          String line;
-          while ((line = reader.readLine()) != null) {
-            System.out.println("read line: " + line);
-            var prime = isPrime(line);
-            outputStream.write(String.format(responseTemplate, prime).getBytes());
+        String line;
+        byte[] response;
+        while ((line = reader.readLine()) != null) {
+          try {
+            response = this.getResponse(line);
+          } catch (MalformedPayloadException e) {
+            System.out.println("malformed payload: " + line);
+            response = responseTemplate.getBytes();
+          } catch (Exception e) {
+            throw new RuntimeException("unexpected error occurred", e);
           }
-        } catch (MalformedPayloadException mpe) {
-          outputStream.write(responseTemplate.getBytes());
+          outputStream.write(response);
         }
       } catch (IOException e) {
         throw new RuntimeException(e);
       }
     }
 
+    private byte[] getResponse(String line) throws MalformedPayloadException {
+      var prime = isPrime(line);
+      var response = String.format(responseTemplate, prime);
+      System.out.println("write " + response + " to line: " + line);
+      return response.getBytes();
+    }
+
     private boolean isPrime(String requestBody) throws MalformedPayloadException {
-      final JSONObject json;
+      final Payload p;
       try {
-        json = new JSONObject(requestBody);
-      } catch (JSONException e) {
+        p = gson.fromJson(requestBody, Payload.class);
+        System.out.println("parsed payload: " + p);
+      } catch (JsonParseException | ClassCastException e) {
         throw new MalformedPayloadException(e);
       }
-      try {
-        if (!json.getString("method").equals("isPrime")) {
-          throw new MalformedPayloadException("incorrect method name");
+      if (!p.method.equals("isPrime")) {
+        throw new MalformedPayloadException("incorrect method name");
+      }
+      if (p.number < 0 || p.number % 1 != 0) return false;
+      return sieve.get((int) p.number);
+    }
+
+    record Payload(String method, double number) {
+    }
+
+    static class PayloadAdapter implements JsonDeserializer<Payload> {
+      @Override
+      public Payload deserialize(JsonElement jsonElement,
+                                 Type type,
+                                 JsonDeserializationContext ctx
+      ) throws JsonParseException {
+        JsonObject obj = jsonElement.getAsJsonObject();
+        if (!obj.has("method")) {
+          throw new JsonParseException("method field required");
         }
-      } catch (JSONException e) {
-        throw new MalformedPayloadException(e);
+        if (!obj.has("number")) {
+          throw new JsonParseException("number field required");
+        }
+        return new Payload(
+          obj.get("method").getAsJsonPrimitive().getAsString(),
+          obj.get("number").getAsJsonPrimitive().getAsDouble());
       }
-      final double num;
-      try {
-        num = json.getDouble("number");
-      } catch (JSONException e) {
-        throw new MalformedPayloadException(e);
-      }
-      if (num % 1 != 0) return false;
-      return primes.contains((int) num);
     }
 
     static class MalformedPayloadException extends Exception {
